@@ -130,6 +130,87 @@
       gap: 10px;
     }
 
+    .topbar {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .taskBtn {
+      appearance: none;
+      border: 1px solid color-mix(in oklab, var(--accent) 45%, rgba(148,163,184,0.30) 55%);
+      background: color-mix(in oklab, var(--accent) 22%, rgba(15,23,42,0.12) 78%);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 999px;
+      font-weight: 900;
+      letter-spacing: 0.2px;
+      cursor: pointer;
+      white-space: nowrap;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.12);
+      transition: transform 120ms ease, background-color 120ms ease;
+    }
+    .taskBtn:hover { transform: translateY(-1px); }
+    .taskBtn:active { transform: translateY(0px); }
+
+    dialog.taskDialog {
+      border: none;
+      padding: 0;
+      background: transparent;
+      max-width: min(720px, calc(100vw - 24px));
+      width: 100%;
+    }
+    dialog.taskDialog::backdrop {
+      background: rgba(2, 6, 23, 0.55);
+      backdrop-filter: blur(5px);
+    }
+    .taskPanel {
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.26);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+      padding: 16px 16px 14px;
+      display: grid;
+      gap: 12px;
+    }
+    .taskPanel header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .taskTitle {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 950;
+    }
+    .closeBtn {
+      appearance: none;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(15,23,42,0.08);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 999px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .taskBody {
+      margin: 0;
+      color: var(--text);
+      line-height: 1.5;
+      font-size: 0.98rem;
+    }
+    .taskBody ol, .taskBody ul {
+      margin: 8px 0 0 18px;
+      padding: 0;
+      display: grid;
+      gap: 6px;
+    }
+    .taskBody li { color: var(--text); }
+    .taskBody strong { font-weight: 950; }
+
     .uiToggle {
       position: absolute;
       z-index: 3;
@@ -166,11 +247,15 @@
 </head>
 <body>
   <main class="app">
-    <h1>Hledání skutečného obrazu</h1>
-    <p class="hint">
-      Táhni <strong>plamínek</strong> (vlevo) a <strong>stínítko</strong> (svislá černá čára) po optické ose.
-      Vedle stínítka se zobrazuje, jaký obraz se na něm vytvoří. Pokud je stínítko mimo rovinu obrazu, obraz je rozmazaný.
-    </p>
+    <div class="topbar">
+      <div>
+        <h1>Hledání skutečného obrazu</h1>
+        <p class="hint">
+          Pohybuj plamínkem svíčky a stínítkem sleduj, jaký obraz plamínku je vidět na stínítku.
+        </p>
+      </div>
+      <button id="taskBtn" class="taskBtn" type="button">Badatelský úkol</button>
+    </div>
 
     <div class="card">
       <div class="sceneWrap">
@@ -186,6 +271,38 @@
         </div>
       </div>
     </div>
+
+    <dialog id="taskDialog" class="taskDialog" aria-labelledby="taskDialogTitle">
+      <div class="taskPanel" role="document">
+        <header>
+          <h2 id="taskDialogTitle" class="taskTitle">Badatelský úkol</h2>
+          <button id="taskCloseBtn" class="closeBtn" type="button">Zavřít</button>
+        </header>
+        <div class="taskBody">
+          <p style="margin:0"><strong>Vyber čočku spojku.</strong></p>
+          <p style="margin:8px 0 0">Postupně nastavuj plamínek do následujících vzdáleností od čočky:</p>
+          <ol>
+            <li>větší než 2F</li>
+            <li>2F</li>
+            <li>mezi F a 2F</li>
+            <li>F</li>
+            <li>menší než F</li>
+          </ol>
+          <p style="margin:10px 0 0">
+            U každé z předchozích vzdáleností plamínku hledej, v jaké vzdálenosti stínítka od čočky vzniká ostrý obraz plamínku.
+          </p>
+          <p style="margin:10px 0 0">Ke každé z předchozích vzdáleností přiřaď jednu z následujících možností:</p>
+          <ul>
+            <li>Obraz vznikl ve vzdálenosti větší než 2F.</li>
+            <li>Obraz vznikl ve vzdálenosti 2F.</li>
+            <li>Obraz vznikl ve vzdálenosti mezi F a 2F.</li>
+            <li>Obraz vznikl ve vzdálenosti F.</li>
+            <li>Obraz vznikl ve vzdálenosti menší než F.</li>
+            <li>Obraz nevznikl.</li>
+          </ul>
+        </div>
+      </div>
+    </dialog>
   </main>
 
   <script>
@@ -197,6 +314,18 @@
     const noLensBtn = document.getElementById("noLensBtn");
     const cameraBtn = document.getElementById("cameraBtn");
     const helperRaysBtn = document.getElementById("helperRaysBtn");
+    const taskBtn = document.getElementById("taskBtn");
+    const taskDialog = document.getElementById("taskDialog");
+    const taskCloseBtn = document.getElementById("taskCloseBtn");
+
+    function openTask() {
+      if (!(taskDialog instanceof HTMLDialogElement)) return;
+      if (typeof taskDialog.showModal === "function") taskDialog.showModal();
+    }
+    function closeTask() {
+      if (!(taskDialog instanceof HTMLDialogElement)) return;
+      if (typeof taskDialog.close === "function") taskDialog.close();
+    }
 
     function cssVar(name, fallback) {
       const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -1235,6 +1364,18 @@
       helperRaysBtn.setAttribute("aria-pressed", String(state.showHelperRays));
       draw();
     });
+    if (taskBtn) taskBtn.addEventListener("click", openTask);
+    if (taskCloseBtn) taskCloseBtn.addEventListener("click", closeTask);
+    if (taskDialog instanceof HTMLDialogElement) {
+      taskDialog.addEventListener("click", (e) => {
+        // close when clicking the backdrop (outside the panel)
+        const r = taskDialog.getBoundingClientRect();
+        const inside =
+          e.clientX >= r.left && e.clientX <= r.right &&
+          e.clientY >= r.top && e.clientY <= r.bottom;
+        if (!inside) closeTask();
+      });
+    }
     window.addEventListener("resize", positionLensToggle);
 
     // subtle flame flicker animation (cheap: just redraw)
