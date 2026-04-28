@@ -1,4 +1,4 @@
-# Simulace optické lavice (čočka)
+# skutecny_obraz
 
 Jednoduchá interaktivní simulace optické lavice v čistém HTML/Canvas.
 
@@ -20,7 +20,7 @@ Repozitář je připravený na automatické nasazení přes GitHub Actions.
 
 ## Ovládání
 
-- Táhni **svíčku** (vlevo) a **stínítko** (svislá černá čára) po optické ose.
+- Táhni **plamínek** (vlevo) a **stínítko** (svislá černá čára) po optické ose.
 - Přepínej typ čočky: **Spojka / Rozptylka**.
 
 ## Licence

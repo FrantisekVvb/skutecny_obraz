@@ -1,5 +1,5 @@
 {
-  "name": "simulace-opticka-lavice",
+  "name": "skutecny_obraz",
   "private": true,
   "version": "0.1.0",
   "description": "Jednoduchá interaktivní simulace optické lavice v čistém HTML/Canvas.",
