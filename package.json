@@ -1,0 +1,11 @@
+{
+  "name": "simulace-opticka-lavice",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Jednoduchá interaktivní simulace optické lavice v čistém HTML/Canvas.",
+  "scripts": {
+    "dev": "npx --yes serve . -l 5173",
+    "serve": "npx --yes serve . -l 5173"
+  }
+}
+

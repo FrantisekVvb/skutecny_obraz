@@ -129,22 +129,60 @@
       display: grid;
       gap: 10px;
     }
+
+    .uiToggle {
+      position: absolute;
+      z-index: 3;
+      left: 14px;
+      top: 14px;
+      display: inline-flex;
+      padding: 6px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(15,23,42,0.35);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      user-select: none;
+    }
+    .uiToggle button {
+      appearance: none;
+      border: 1px solid rgba(148,163,184,0.25);
+      background: rgba(15,23,42,0.25);
+      color: var(--text);
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      cursor: pointer;
+      transition: transform 120ms ease, background-color 120ms ease, opacity 120ms ease;
+      white-space: nowrap;
+    }
+    .uiToggle button:hover { transform: translateY(-1px); }
+    .uiToggle button[aria-pressed="true"] {
+      background: color-mix(in oklab, var(--accent) 24%, rgba(15,23,42,0.22) 76%);
+      border-color: color-mix(in oklab, var(--accent) 35%, rgba(148,163,184,0.25) 65%);
+    }
   </style>
 </head>
 <body>
   <main class="app">
     <h1>Simulace optické lavice (spojná čočka)</h1>
     <p class="hint">
-      Táhni <strong>svíčku</strong> (vlevo) a <strong>stínítko</strong> (svislá černá čára) po optické ose.
+      Táhni <strong>plamínek</strong> (vlevo) a <strong>stínítko</strong> (svislá černá čára) po optické ose.
       Vedle stínítka se zobrazuje, jaký obraz se na něm vytvoří. Pokud je stínítko mimo rovinu obrazu, obraz je rozmazaný.
     </p>
 
     <div class="card">
       <div class="sceneWrap">
-        <canvas id="scene" width="1600" height="520" aria-label="Optická lavice se spojnou čočkou"></canvas>
+        <canvas id="scene" width="1600" height="660" aria-label="Optická lavice se spojnou čočkou"></canvas>
+        <div class="uiToggle" role="group" aria-label="Pomocné paprsky">
+          <button id="helperRaysBtn" type="button" aria-pressed="false">Pomocné paprsky</button>
+        </div>
         <div id="lensToggle" class="lensToggle" role="group" aria-label="Typ čočky">
           <button id="convergingBtn" type="button" aria-pressed="true">Spojka</button>
           <button id="divergingBtn" type="button" aria-pressed="false">Rozptylka</button>
+          <button id="noLensBtn" type="button" aria-pressed="false">Bez čočky</button>
+          <button id="cameraBtn" type="button" aria-pressed="false">Camera obscura</button>
         </div>
       </div>
     </div>
@@ -156,6 +194,9 @@
     const lensToggleEl = document.getElementById("lensToggle");
     const convergingBtn = document.getElementById("convergingBtn");
     const divergingBtn = document.getElementById("divergingBtn");
+    const noLensBtn = document.getElementById("noLensBtn");
+    const cameraBtn = document.getElementById("cameraBtn");
+    const helperRaysBtn = document.getElementById("helperRaysBtn");
 
     function cssVar(name, fallback) {
       const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -179,15 +220,18 @@
     const state = {
       // pixel coordinates on canvas
       lensX: Math.round(canvas.width * 0.48),
-      axisY: 292,
-      candleBaseY: 350,
+      axisY: 360,
+      candleBaseY: 440,
       candleX: 140,
       screenX: 900,
+      screenY: 330,
       fPx: 110,
-      lensType: "converging", // "converging" | "diverging"
+      lensType: "converging", // "converging" | "diverging" | "none" | "camera"
       candleHeight: 118,
+      showHelperRays: false,
       dragging: null, // "candle" | "screen" | null
       dragOffsetX: 0,
+      dragOffsetY: 0,
       hover: null
     };
 
@@ -223,13 +267,18 @@
 
     function effectiveF() {
       const f = Math.max(1, state.fPx);
+      if (state.lensType === "none") return Number.POSITIVE_INFINITY;
       return state.lensType === "converging" ? f : -f;
     }
 
     function setLensType(type) {
-      state.lensType = type === "diverging" ? "diverging" : "converging";
+      state.lensType = type === "camera"
+        ? "camera"
+        : (type === "none" ? "none" : (type === "diverging" ? "diverging" : "converging"));
       if (convergingBtn) convergingBtn.setAttribute("aria-pressed", String(state.lensType === "converging"));
       if (divergingBtn) divergingBtn.setAttribute("aria-pressed", String(state.lensType === "diverging"));
+      if (noLensBtn) noLensBtn.setAttribute("aria-pressed", String(state.lensType === "none"));
+      if (cameraBtn) cameraBtn.setAttribute("aria-pressed", String(state.lensType === "camera"));
       draw();
     }
 
@@ -241,7 +290,10 @@
       const scaleX = rect.width / canvas.width;
       const scaleY = rect.height / canvas.height;
 
-      const approxY = 446; // lower under lens visually
+      // Place the toggle just below the lens, regardless of canvas height.
+      // Keep it safely inside the canvas bounds.
+      const lensBottom = canvas.height - 70; // matches drawLens()
+      const approxY = clamp(lensBottom + 44, 40, canvas.height - 24);
       const left = state.lensX * scaleX;
       const top = approxY * scaleY;
       lensToggleEl.style.left = `${left}px`;
@@ -254,6 +306,7 @@
     }
 
     function drawMarks() {
+      if (state.lensType === "none" || state.lensType === "camera") return;
       const x0 = state.lensX;
       const f = Math.abs(effectiveF());
       const marks = [
@@ -264,10 +317,10 @@
       ];
 
       ctx.save();
-      ctx.strokeStyle = "rgba(100,116,139,0.55)";
-      ctx.fillStyle = "rgba(100,116,139,0.75)";
-      ctx.lineWidth = 1.5;
-      ctx.font = "750 12px system-ui";
+      ctx.strokeStyle = "rgba(148,163,184,0.78)";
+      ctx.fillStyle = "rgba(226,232,240,0.92)";
+      ctx.lineWidth = 2;
+      ctx.font = "900 14px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
 
@@ -276,15 +329,66 @@
         // small tick + label (without drawing the full axis)
         const y = state.axisY;
         ctx.beginPath();
-        ctx.moveTo(m.x, y - 8);
-        ctx.lineTo(m.x, y + 8);
+        ctx.moveTo(m.x, y - 10);
+        ctx.lineTo(m.x, y + 10);
         ctx.stroke();
-        ctx.fillText(m.label, m.x, y + 12);
+
+        // label with subtle pill background for readability
+        const labelY = y + 14;
+        const padX = 8;
+        const padY = 4;
+        const w = ctx.measureText(m.label).width + padX * 2;
+        const h = 20;
+        ctx.save();
+        ctx.fillStyle = "rgba(15,23,42,0.40)";
+        ctx.strokeStyle = "rgba(148,163,184,0.30)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        roundRectPath(ctx, m.x - w / 2, labelY - padY, w, h, 999);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.shadowColor = "rgba(0,0,0,0.35)";
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = "rgba(226,232,240,0.94)";
+        ctx.fillText(m.label, m.x, labelY);
+        ctx.restore();
       });
       ctx.restore();
     }
 
     function drawLens() {
+      if (state.lensType === "none") return;
+      if (state.lensType === "camera") {
+        // Pinhole camera: an opaque plate with a small hole.
+        const x = state.lensX;
+        const top = 76;
+        const bottom = canvas.height - 70;
+        ctx.save();
+        ctx.fillStyle = "rgba(2, 6, 23, 0.55)";
+        ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        roundRectPath(ctx, x - 10, top, 20, bottom - top, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // hole at optical axis
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.beginPath();
+        ctx.arc(x, state.axisY, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = "rgba(226, 232, 240, 0.55)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(x, state.axisY, 3.2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        return;
+      }
       const x = state.lensX;
       const top = 76;
       const bottom = canvas.height - 70;
@@ -356,29 +460,28 @@
       const x = state.candleX;
       const baseY = state.candleBaseY;
       const h = state.candleHeight;
-      return { x: x - 26, y: baseY - h - 18, w: 52, h: h + 34 };
+      // Flame only: smaller hit box around the flame.
+      return { x: x - 28, y: baseY - h - 14, w: 56, h: h + 22 };
     }
 
     function screenHitRect() {
       const x = state.screenX;
-      const top = 108;
-      const bottom = canvas.height - 92;
+      const halfLen = 160;
+      const top = state.screenY - halfLen;
+      const bottom = state.screenY + halfLen;
       return { x: x - 16, y: top - 12, w: 32, h: (bottom - top) + 24 };
     }
 
-    function drawCandle(x, baseY, height, opts = {}) {
+    function drawFlame(x, baseY, height, opts = {}) {
       const inverted = Boolean(opts.inverted);
       const blur = Number.isFinite(opts.blur) ? opts.blur : 0;
       const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 1;
       const now = Number.isFinite(opts.t) ? opts.t : 0;
-      const maxBodyW = Number.isFinite(opts.maxBodyW) ? opts.maxBodyW : 34;
       const onWhite = opts.onWhite === true;
 
-      const H = Math.max(18, Math.abs(height));
-      const bodyW = clamp(H * 0.22, 16, maxBodyW);
-      const bodyH = Math.max(26, H * 0.78);
-      const stemH = Math.max(6, H - bodyH);
       const dir = inverted ? -1 : 1;
+      // Allow much larger flames in the preview (high magnification near focus).
+      const H = clamp(Math.abs(height), 18, onWhite ? 1600 : 320);
 
       ctx.save();
       ctx.globalAlpha = alpha;
@@ -386,146 +489,106 @@
       if (blur > 0.001) {
         if ("filter" in ctx) {
           ctx.filter = `blur(${blur}px)`;
-          drawCandle(x, baseY, height, { ...opts, blur: 0, alpha: 1, t: now, maxBodyW });
+          drawFlame(x, baseY, height, { ...opts, blur: 0, alpha: 1, t: now });
           ctx.filter = "none";
           ctx.restore();
           return;
         }
-        ctx.globalAlpha = alpha * 0.32;
-        const steps = 6;
-        for (let i = 0; i < steps; i += 1) {
-          const s = (i - (steps - 1) / 2);
-          drawCandle(x + s * blur, baseY, height, { ...opts, blur: 0, alpha: 1, t: now, maxBodyW });
-        }
-        ctx.restore();
-        return;
       }
 
-      const topY = baseY - dir * (stemH + bodyH);
-      const yMin = Math.min(topY, baseY - dir * stemH);
-      const yMax = Math.max(topY, baseY - dir * stemH);
-      const r = clamp(bodyW * 0.28, 4, 10);
-
-      // Body: cylindrical wax with shading
-      const base = cssVar("--candle-body", "#ef4444");
-      const wax = cssVar("--candle-wax", "#fb7185");
-      const gx = ctx.createLinearGradient(x - bodyW / 2, 0, x + bodyW / 2, 0);
-      gx.addColorStop(0, "rgba(0,0,0,0.18)");
-      gx.addColorStop(0.16, base);
-      gx.addColorStop(0.52, wax);
-      gx.addColorStop(0.86, base);
-      gx.addColorStop(1, "rgba(0,0,0,0.16)");
-      ctx.fillStyle = gx;
-      ctx.beginPath();
-      roundRectPath(ctx, x - bodyW / 2, yMin, bodyW, yMax - yMin, r);
-      ctx.fill();
-
-      const gy = ctx.createLinearGradient(0, yMin, 0, yMax);
-      gy.addColorStop(0, "rgba(255,255,255,0.16)");
-      gy.addColorStop(0.22, "rgba(255,255,255,0.02)");
-      gy.addColorStop(1, "rgba(0,0,0,0.12)");
-      ctx.fillStyle = gy;
-      ctx.beginPath();
-      roundRectPath(ctx, x - bodyW / 2, yMin, bodyW, yMax - yMin, r);
-      ctx.fill();
-
-      // Melted rim (ellipse)
-      const rimY = inverted ? (yMax - 2) : (yMin + 2);
-      ctx.globalAlpha = alpha * 0.55;
-      ctx.fillStyle = "rgba(255,255,255,0.14)";
-      ctx.beginPath();
-      ctx.ellipse(x, rimY, bodyW * 0.45, bodyW * 0.18, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = alpha;
-
-      // Wax drips (subtle)
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.38;
-      ctx.fillStyle = "rgba(255,255,255,0.20)";
-      const dripCount = Math.round(clamp(bodyW / 10, 2, 4));
-      for (let i = 0; i < dripCount; i += 1) {
-        const phase = (i + 1) * 1.9;
-        const dx = (Math.sin(phase * 2.0) * 0.18 + (i - (dripCount - 1) / 2) * 0.22) * bodyW;
-        const dripW = clamp(bodyW * (0.13 + 0.03 * i), 3, 9);
-        const dripH = clamp((yMax - yMin) * (0.18 + 0.07 * i), 18, 70);
-        const yStart = inverted ? (yMax - dripH * 0.58) : (yMin + dripH * 0.10);
-        ctx.beginPath();
-        roundRectPath(ctx, x + dx - dripW / 2, yStart, dripW, dripH, dripW / 2);
-        ctx.fill();
-      }
-      ctx.restore();
-
-      // Wick near top
-      const wickBaseY = inverted ? (yMax - 2) : (yMin + 2);
-      const wickTipY = wickBaseY - dir * clamp(bodyW * 0.42, 7, 14);
-      const wickTipX = x + (inverted ? -1 : 1) * bodyW * 0.06;
-      ctx.strokeStyle = "rgba(15,23,42,0.85)";
-      ctx.lineWidth = clamp(bodyW * 0.10, 2, 4);
+      // Small wick (optional visual anchor)
+      const wickH = clamp(H * 0.12, 7, onWhite ? 60 : 18);
+      const wickBaseY = baseY;
+      const wickTipY = wickBaseY - dir * wickH;
+      ctx.strokeStyle = onWhite ? "rgba(15,23,42,0.75)" : "rgba(226,232,240,0.55)";
+      ctx.lineWidth = 3;
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(x, wickBaseY);
-      ctx.lineTo(wickTipX, wickTipY);
+      ctx.lineTo(x + (inverted ? -1 : 1) * 1.5, wickTipY);
       ctx.stroke();
 
-      // Flame with subtle flicker
+      // Flame body: enforce that the visible tip is exactly at baseY - dir * H.
       const flick = Math.sin((now / 85) + x * 0.02) * 0.9 + Math.sin((now / 140) + 1.7) * 0.6;
-      const flameY = wickTipY - dir * (bodyW * 0.42 + flick);
-      // Anchor flame to the wick tip so it never "floats" away.
-      const fx = wickTipX + (inverted ? -1 : 1) * flick * 0.18;
-      const fw = clamp(bodyW * 0.38 + flick * 0.18, 5.5, 14);
-      const fh = clamp(bodyW * 0.62 + flick * 0.30, 9, 22);
+      const tipY = baseY - dir * H;
+      const fx = x + (inverted ? -1 : 1) * flick * 0.55;
 
-      const flameGrad = ctx.createRadialGradient(fx, flameY + dir * 2, 1, fx, flameY + dir * 2, fh);
-      flameGrad.addColorStop(0, "rgba(255, 244, 202, 0.95)");
-      flameGrad.addColorStop(0.35, cssVar("--flame2", "#fde047"));
-      flameGrad.addColorStop(0.75, cssVar("--flame", "#f59e0b"));
-      // On white paper, avoid fading to full transparency (it looks like a flat blob).
-      flameGrad.addColorStop(1, onWhite ? "rgba(245, 158, 11, 0.20)" : "rgba(245, 158, 11, 0.0)");
-      ctx.fillStyle = flameGrad;
+      const wBase = clamp(H * 0.22 + flick * 0.18, 10, onWhite ? 520 : 52);
+      const wMid = wBase * 0.56;
+      const wTip = Math.max(1.5, wBase * 0.08);
+
+      // Put the geometric base of the flame close to the wick tip.
+      const yBase = wickTipY + dir * clamp(H * 0.02, 0, 4);
+      const yMid = baseY - dir * (H * 0.55 + flick * 0.25);
+      const yTip = tipY; // keep exact
+
+      const outerGrad = ctx.createLinearGradient(0, Math.min(yTip, yBase), 0, Math.max(yTip, yBase));
+      outerGrad.addColorStop(0, "rgba(255, 250, 230, 0.98)");
+      outerGrad.addColorStop(0.35, cssVar("--flame2", "#fde047"));
+      outerGrad.addColorStop(0.72, cssVar("--flame", "#f59e0b"));
+      outerGrad.addColorStop(1, "rgba(245, 158, 11, 0.0)");
+      ctx.fillStyle = outerGrad;
 
       if (onWhite) {
         ctx.save();
-        ctx.shadowColor = "rgba(15, 23, 42, 0.18)";
-        ctx.shadowBlur = 8;
+        ctx.shadowColor = "rgba(15, 23, 42, 0.14)";
+        ctx.shadowBlur = 10;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 2 * (inverted ? -1 : 1);
         ctx.beginPath();
-        ctx.ellipse(fx, flameY, fw, fh, (inverted ? -1 : 1) * 0.12, 0, Math.PI * 2);
+        ctx.moveTo(fx, yTip);
+        ctx.bezierCurveTo(fx - wTip, yTip + dir * (H * 0.10), fx - wMid, yMid - dir * (H * 0.12), fx - wBase, yBase);
+        ctx.bezierCurveTo(fx - wBase * 0.62, yBase + dir * (H * 0.06), fx - wBase * 0.18, yBase + dir * (H * 0.08), fx, yBase + dir * (H * 0.08));
+        ctx.bezierCurveTo(fx + wBase * 0.18, yBase + dir * (H * 0.08), fx + wBase * 0.62, yBase + dir * (H * 0.06), fx + wBase, yBase);
+        ctx.bezierCurveTo(fx + wMid, yMid - dir * (H * 0.12), fx + wTip, yTip + dir * (H * 0.10), fx, yTip);
+        ctx.closePath();
         ctx.fill();
         ctx.restore();
       } else {
         ctx.beginPath();
-        ctx.ellipse(fx, flameY, fw, fh, (inverted ? -1 : 1) * 0.12, 0, Math.PI * 2);
+        ctx.moveTo(fx, yTip);
+        ctx.bezierCurveTo(fx - wTip, yTip + dir * (H * 0.10), fx - wMid, yMid - dir * (H * 0.12), fx - wBase, yBase);
+        ctx.bezierCurveTo(fx - wBase * 0.62, yBase + dir * (H * 0.06), fx - wBase * 0.18, yBase + dir * (H * 0.08), fx, yBase + dir * (H * 0.08));
+        ctx.bezierCurveTo(fx + wBase * 0.18, yBase + dir * (H * 0.08), fx + wBase * 0.62, yBase + dir * (H * 0.06), fx + wBase, yBase);
+        ctx.bezierCurveTo(fx + wMid, yMid - dir * (H * 0.12), fx + wTip, yTip + dir * (H * 0.10), fx, yTip);
+        ctx.closePath();
         ctx.fill();
       }
 
-      // subtle outline for readability on white
-      if (onWhite) {
-        ctx.save();
-        ctx.globalAlpha = alpha * 0.22;
-        ctx.strokeStyle = "rgba(217, 119, 6, 0.55)";
-        ctx.lineWidth = clamp(bodyW * 0.05, 1, 2.2);
-        ctx.beginPath();
-        ctx.ellipse(fx, flameY, fw, fh, (inverted ? -1 : 1) * 0.12, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      // tiny blue base near wick
-      ctx.globalAlpha = alpha * 0.55;
-      ctx.fillStyle = "rgba(59, 130, 246, 0.32)";
+      // Inner core (hot white/yellow)
+      const coreW = wBase * 0.42;
+      const coreH = H * 0.42;
+      const coreY = yMid - dir * (H * 0.06);
+      const coreGrad = ctx.createRadialGradient(fx, coreY, 1, fx, coreY, Math.max(coreH, coreW));
+      coreGrad.addColorStop(0, "rgba(255, 255, 255, 0.90)");
+      coreGrad.addColorStop(0.42, "rgba(255, 244, 202, 0.70)");
+      coreGrad.addColorStop(0.95, "rgba(253, 224, 71, 0.10)");
+      coreGrad.addColorStop(1, "rgba(253, 224, 71, 0.0)");
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.95;
+      ctx.fillStyle = coreGrad;
       ctx.beginPath();
-      ctx.ellipse(wickTipX, wickTipY - dir * 3, fw * 0.30, fh * 0.22, 0, 0, Math.PI * 2);
+      ctx.ellipse(fx, coreY, coreW, coreH, (inverted ? -1 : 1) * 0.06, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = alpha;
+      ctx.restore();
+
+      // Tiny blue base near wick
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.38;
+      ctx.fillStyle = "rgba(59, 130, 246, 0.26)";
+      ctx.beginPath();
+      ctx.ellipse(x, wickTipY - dir * 3, wBase * 0.22, H * 0.08, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
 
       ctx.restore();
     }
 
     function drawScreen() {
       const x = state.screenX;
-      const top = 108;
-      const bottom = canvas.height - 92;
+      const halfLen = 160;
+      const top = state.screenY - halfLen;
+      const bottom = state.screenY + halfLen;
       ctx.save();
       ctx.strokeStyle = cssVar("--screen", "#0f172a");
       ctx.lineWidth = 7;
@@ -538,21 +601,25 @@
     }
 
     function drawSceneCandle(now) {
-      drawCandle(state.candleX, state.candleBaseY, state.candleHeight, { inverted: false, t: now });
+      drawFlame(state.candleX, state.candleBaseY, state.candleHeight, { inverted: false, t: now });
     }
 
     function candleFlamePoint(baseY, height) {
-      // Roughly matches drawCandle() geometry for upright candle (inverted=false).
-      const H = Math.max(18, Math.abs(height));
-      const bodyW = clamp(H * 0.22, 16, 34);
-      const bodyH = Math.max(26, H * 0.78);
-      const stemH = Math.max(6, H - bodyH);
-      const yMin = baseY - stemH - bodyH;
-      const yMax = baseY - stemH;
-      const wickBaseY = yMin + 2;
-      const wickTipY = wickBaseY - clamp(bodyW * 0.42, 7, 14);
-      const flameY = wickTipY - (bodyW * 0.42);
-      return { x: state.candleX, y: flameY };
+      // Flame-only object: tip is baseY - height (upright).
+      const H = clamp(Math.abs(height), 18, 320);
+      return { x: state.candleX, y: baseY - H };
+    }
+
+    function candleBottomPoint(baseY, height) {
+      // Flame-only object: bottom is its baseY (near wick).
+      void height;
+      return { x: state.candleX, y: baseY };
+    }
+
+    function flameTipOffsetFromBase(height, inverted) {
+      const dir = inverted ? -1 : 1;
+      const H = clamp(Math.abs(height), 18, 1600);
+      return 0 - dir * H; // baseY is 0
     }
 
     function drawRays(doPx, image) {
@@ -562,11 +629,11 @@
       const yObjTop = candleFlamePoint(state.candleBaseY, state.candleHeight).y;
 
       // principal rays from top of object:
-      // 1) parallel to axis -> through F on right (or appears from F for virtual)
+      // 1) parallel to axis -> converging: through right focus; diverging: diverges as if from left focus
       // 2) through center of lens -> straight line
-      const f = state.fPx;
-      const xF = xLens + f;
-      const xFp = xLens - f;
+      const fAbs = Math.max(1, Math.abs(state.fPx));
+      const xFRight = xLens + fAbs;
+      const xFLeft = xLens - fAbs;
 
       ctx.save();
       ctx.globalAlpha = 0.55;
@@ -584,7 +651,7 @@
       ctx.lineTo(canvas.width - 24, yRight2);
       ctx.stroke();
 
-      // ray 1: parallel to axis to lens, then refract through focus
+      // ray 1: parallel to axis to lens, then refract via focal point
       ctx.strokeStyle = cssVar("--ray", "#0ea5e9");
       ctx.beginPath();
       ctx.moveTo(xObj, yObjTop);
@@ -593,37 +660,211 @@
 
       ctx.beginPath();
       ctx.moveTo(xLens, yObjTop);
-      if (image.type === "real") {
-        // go through F on right
-        ctx.lineTo(xF, yAxis);
-        const t1 = (canvas.width - 24 - xF) / (xF - xLens);
-        const yRight1 = yAxis + (yAxis - yObjTop) * t1;
-        ctx.lineTo(canvas.width - 24, yRight1);
+      const xRight = canvas.width - 24;
+      const dx = xRight - xLens;
+      if (state.lensType === "diverging") {
+        // Diverging lens: a parallel ray leaves diverging as if it originated from the left focal point.
+        // Use the line through (xFLeft, yAxis) and the lens point (xLens, yObjTop), extended to the right.
+        const slope = (yObjTop - yAxis) / ((xLens - xFLeft) || 1e-6);
+        ctx.lineTo(xRight, yObjTop + slope * dx);
       } else {
-        // virtual: refracted ray diverges as if it came from F' on left
-        ctx.lineTo(xF, yAxis); // still draw typical direction to right
-        const t1 = (canvas.width - 24 - xF) / (xF - xLens);
-        const yRight1 = yAxis + (yAxis - yObjTop) * t1;
-        ctx.lineTo(canvas.width - 24, yRight1);
-
-        // dashed back-projection to left focus
-        ctx.setLineDash([6, 6]);
-        ctx.beginPath();
-        ctx.moveTo(xLens, yObjTop);
-        ctx.lineTo(xFp, yAxis);
-        ctx.strokeStyle = cssVar("--ray", "#0ea5e9");
-        ctx.stroke();
-        ctx.setLineDash([]);
+        // Converging lens: a parallel ray refracts through the right focal point.
+        const slope = (yAxis - yObjTop) / ((xFRight - xLens) || 1e-6);
+        ctx.lineTo(xRight, yObjTop + slope * dx);
       }
       ctx.stroke();
 
       ctx.restore();
     }
 
+    function drawHelperRays(imageSigned) {
+      const xLens = state.lensX;
+      const yAxis = state.axisY;
+      const xObj = state.candleX;
+      const yObjTop = candleFlamePoint(state.candleBaseY, state.candleHeight).y;
+      const yObjBottom = candleBottomPoint(state.candleBaseY, state.candleHeight).y;
+
+      // Lens vertical extent (matches drawLens()).
+      const lensTop = 76;
+      const lensBottom = canvas.height - 70;
+
+      // Bundle of 5 rays leaving from one point (flame tip).
+      // Distribute them around the optical axis so that (at least) two pass below the lens center.
+      const offsets = [-72, -36, 0, 36, 72];
+      const yLensPoints = offsets
+        .map((d) => clamp(yAxis + d, lensTop + 12, lensBottom - 12));
+
+      // Make the middle helper ray a "chief ray" through the optical center.
+      // That ray should not bend in the thin-lens approximation.
+      yLensPoints[2] = clamp(yAxis, lensTop + 12, lensBottom - 12);
+
+      const xRight = canvas.width - 24;
+
+      // Camera obscura: only a single ray can pass through the pinhole.
+      if (state.lensType === "camera") {
+        ctx.save();
+        ctx.globalAlpha = 0.70;
+        ctx.lineWidth = 2.2;
+        ctx.lineCap = "round";
+        ctx.setLineDash([7, 7]);
+        function drawCameraBundle(yOrigin, strokeStyle) {
+          ctx.strokeStyle = strokeStyle;
+          for (let i = 0; i < yLensPoints.length; i += 1) {
+            const yAtPlate = (i === 2) ? yAxis : yLensPoints[i];
+
+            // Segment to the plate (always drawn)
+            ctx.beginPath();
+            ctx.moveTo(xObj, yOrigin);
+            ctx.lineTo(xLens, yAtPlate);
+            ctx.stroke();
+
+            // Only the ray through the pinhole continues beyond the plate.
+            if (i === 2) {
+              const dxIn = xLens - xObj;
+              const slope = (yAtPlate - yOrigin) / (dxIn || 1e-6);
+              const dxOut = xRight - xLens;
+              ctx.beginPath();
+              ctx.moveTo(xLens, yAtPlate);
+              ctx.lineTo(xRight, yAtPlate + slope * dxOut);
+              ctx.stroke();
+            } else {
+              // Small "stop" mark on the plate to show absorption.
+              ctx.save();
+              ctx.setLineDash([]);
+              ctx.globalAlpha = 0.55;
+              ctx.lineWidth = 3.2;
+              ctx.beginPath();
+              ctx.moveTo(xLens - 1, yAtPlate - 4);
+              ctx.lineTo(xLens - 1, yAtPlate + 4);
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+        }
+
+        // From flame tip and from flame base: 5 rays each, only the middle passes the hole.
+        drawCameraBundle(yObjTop, "rgba(56, 189, 248, 0.95)");
+        drawCameraBundle(yObjBottom, "rgba(34, 197, 94, 0.80)");
+
+        ctx.setLineDash([]);
+        ctx.restore();
+        return;
+      }
+
+      // No-lens mode: helper rays are just straight lines (no refraction).
+      if (state.lensType === "none") {
+        ctx.save();
+        ctx.globalAlpha = 0.62;
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        ctx.setLineDash([7, 7]);
+
+        function drawBundleStraight(yOrigin, strokeStyle) {
+          ctx.strokeStyle = strokeStyle;
+          for (let i = 0; i < yLensPoints.length; i += 1) {
+            const yAtRef = (i === 2) ? yAxis : yLensPoints[i];
+            ctx.beginPath();
+            ctx.moveTo(xObj, yOrigin);
+            ctx.lineTo(xLens, yAtRef);
+            const dxIn = xLens - xObj;
+            const slope = (yAtRef - yOrigin) / (dxIn || 1e-6);
+            const dxOut = xRight - xLens;
+            ctx.lineTo(xRight, yAtRef + slope * dxOut);
+            ctx.stroke();
+          }
+        }
+
+        drawBundleStraight(yObjTop, "rgba(56, 189, 248, 0.92)");
+        drawBundleStraight(yObjBottom, "rgba(34, 197, 94, 0.75)");
+
+        ctx.setLineDash([]);
+        ctx.restore();
+        return;
+      }
+
+      const doPx = xLens - xObj;
+      const fSigned = effectiveF();
+      const fAbs = Math.abs(fSigned);
+
+      // Thin-lens model for a point source:
+      // - for real images (di > 0): all refracted rays pass through the image point
+      // - for virtual images (di < 0): rays diverge as if they originated from the virtual image point
+      // - at the focal position (di -> ±∞): outgoing rays become (approximately) parallel, smoothly.
+      if (doPx <= 1e-6 || fAbs <= 1e-6) return;
+
+      let di = null;
+      let m = null;
+      if (imageSigned?.type === "real" || imageSigned?.type === "virtual") {
+        di = imageSigned.di;
+        m = imageSigned.m;
+      } else if (imageSigned?.type === "at_infinity") {
+        // approximate infinity with a very far image plane
+        di = (Math.sign(fSigned) || 1) * 1_000_000;
+        m = -di / doPx;
+      } else {
+        return;
+      }
+
+      if (!Number.isFinite(di) || !Number.isFinite(m) || Math.abs(di) < 1e-6) return;
+
+      ctx.save();
+      ctx.globalAlpha = 0.62;
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      ctx.setLineDash([7, 7]);
+
+      function drawBundle(yOrigin, strokeStyle) {
+        // Image height from magnification (relative to axis)
+        const yImg = yAxis + (yOrigin - yAxis) * m;
+        ctx.strokeStyle = strokeStyle;
+
+        for (let i = 0; i < yLensPoints.length; i += 1) {
+          const yLens = yLensPoints[i];
+
+          // Middle helper ray: single continuous chief ray through lens center.
+          if (i === 2) {
+            ctx.beginPath();
+            ctx.moveTo(xObj, yOrigin);
+            const dxIn = xLens - xObj;
+            const slopeIn = (yAxis - yOrigin) / (dxIn || 1e-6);
+            ctx.lineTo(xLens, yAxis);
+            const dxOut = xRight - xLens;
+            ctx.lineTo(xRight, yAxis + slopeIn * dxOut);
+            ctx.stroke();
+            continue;
+          }
+
+          // Incoming segment to lens
+          ctx.beginPath();
+          ctx.moveTo(xObj, yOrigin);
+          ctx.lineTo(xLens, yLens);
+          ctx.stroke();
+
+          // Outgoing segment after lens
+          ctx.beginPath();
+          ctx.moveTo(xLens, yLens);
+          const dx = xRight - xLens;
+          const slope = (yImg - yLens) / di;
+          ctx.lineTo(xRight, yLens + slope * dx);
+          ctx.stroke();
+        }
+      }
+
+      // From flame tip (existing)
+      drawBundle(yObjTop, "rgba(56, 189, 248, 0.92)");
+      // From bottom of the candle (new helper rays)
+      drawBundle(yObjBottom, "rgba(34, 197, 94, 0.75)");
+
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     function drawImagePreview(image, focusedInfo) {
       // panel to the right of the screen, like "Obraz na stínítku"
       const panelW = 210;
-      const panelH = 260;
+      // Match preview "paper" height to the physical screen segment (2 * 160 px).
+      // Inner white area has vertical padding 14px on both sides => screen.h = panelH - 28.
+      const panelH = 348;
       // Fixed position on the canvas (does NOT follow the screen).
       const x0 = canvas.width - 24 - panelW;
       const y0 = 112;
@@ -655,12 +896,51 @@
       roundRectPath(ctx, screen.x, screen.y, screen.w, screen.h, 10);
       ctx.clip();
 
-      // Candle image exactly centered on the screen.
       const drawX = screen.x + screen.w / 2;
       const centerY = screen.y + screen.h / 2;
 
+      // Map world Y on the physical screen segment to preview Y.
+      // This makes the preview depend on vertical screen position (screenY).
+      const halfLenWorld = 160; // must match drawScreen()
+      const worldTop = state.screenY - halfLenWorld;
+      const worldBottom = state.screenY + halfLenWorld;
+      const worldToPreviewY = (yWorld) => screen.y + ((yWorld - worldTop) * screen.h) / (worldBottom - worldTop);
+      const worldToPreviewScale = screen.h / (worldBottom - worldTop);
+
+      // Make the image dimmer as the screen moves farther from the lens.
+      // (Simple geometric falloff; tuned for visuals rather than strict photometry.)
+      const screenDistPx = Math.max(0, state.screenX - state.lensX);
+      const distNorm = screenDistPx / 420;
+      const distanceAtten = clamp(1 / (1 + distNorm * distNorm), 0.06, 1);
+
       // Draw real image normally. For virtual image fade it out smoothly with heavy defocus.
       if ((image.type === "real" || image.type === "virtual") && focusedInfo.visible) {
+        // Without a lens there is no imaging on a screen: show only a fully blurred glow.
+        if (state.lensType === "none") {
+          const flameWorldY = candleFlamePoint(state.candleBaseY, state.candleHeight).y;
+          const flameY = worldToPreviewY(flameWorldY);
+
+          ctx.save();
+          if ("filter" in ctx) ctx.filter = "blur(32px)";
+          ctx.globalAlpha = 0.45 * distanceAtten;
+          const r = Math.max(screen.w, screen.h) * 0.55;
+          const g = ctx.createRadialGradient(drawX, flameY, 2, drawX, flameY, r);
+          g.addColorStop(0, "rgba(255, 244, 202, 0.65)");
+          g.addColorStop(0.35, "rgba(253, 224, 71, 0.38)");
+          g.addColorStop(0.8, "rgba(251, 191, 36, 0.10)");
+          g.addColorStop(1, "rgba(251, 191, 36, 0.0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.ellipse(drawX, flameY, r, r * 0.75, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.filter = "none";
+          ctx.restore();
+
+          ctx.restore(); // end clip
+          ctx.restore();
+          return;
+        }
+
         const doPx = state.lensX - state.candleX;
         const fPx = state.fPx;
 
@@ -693,32 +973,70 @@
           }
         }
 
+        // Camera obscura: image is sharp but very dim.
+        if (state.lensType === "camera" && image.type === "real") {
+          blurPx = 0;
+          alphaPx = 0.16;
+        }
+
+        // Apply distance falloff for all modes (further screen => dimmer).
+        alphaPx *= distanceAtten;
+
+        // Always render the *image of the flame point* at its physical position on the screen.
+        // This fixes cases where only a small part (or none) of the candle body is within the screen segment.
+        if (image.type === "real" && typeof image.m === "number") {
+          const flameWorldY = candleFlamePoint(state.candleBaseY, state.candleHeight).y;
+          const flameImgWorldY = state.axisY + (flameWorldY - state.axisY) * image.m;
+          const flameY = worldToPreviewY(flameImgWorldY);
+
+          const spotBlur = blurPx * 1.35;
+          const spotR = clamp(4 + spotBlur * 1.1, 4, 36);
+          const spotAlpha = clamp(alphaPx * (focusedInfo.inFocus ? 0.95 : 0.75), state.lensType === "camera" ? 0.02 : 0.12, 1);
+
+          ctx.save();
+          if ("filter" in ctx && spotBlur > 0.001) ctx.filter = `blur(${spotBlur}px)`;
+          ctx.globalAlpha = spotAlpha;
+          const g = ctx.createRadialGradient(drawX, flameY, 1, drawX, flameY, spotR);
+          g.addColorStop(0, "rgba(255, 244, 202, 0.98)");
+          g.addColorStop(0.22, "rgba(253, 224, 71, 0.90)");
+          g.addColorStop(0.55, "rgba(251, 191, 36, 0.55)");
+          g.addColorStop(1, "rgba(251, 191, 36, 0.0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.ellipse(drawX, flameY, spotR, spotR * 0.82, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.filter = "none";
+          ctx.restore();
+        }
+
         if (image.type === "virtual" && state.lensType === "diverging") {
           // Smear instead of a recognizable candle.
           const blobW = screen.w * 0.55;
           const blobH = screen.h * 0.42;
+          const yCenterWorld = state.axisY + (candleFlamePoint(state.candleBaseY, state.candleHeight).y - state.axisY) * (typeof image.m === "number" ? image.m : 0);
+          const blobCenterY = worldToPreviewY(yCenterWorld);
           ctx.save();
           if ("filter" in ctx) ctx.filter = `blur(${blurPx}px)`;
           ctx.globalAlpha = alphaPx;
           // warm radial blob (yellow core -> orange -> red)
-          const g = ctx.createRadialGradient(drawX, centerY, 2, drawX, centerY, Math.max(blobW, blobH));
+          const g = ctx.createRadialGradient(drawX, blobCenterY, 2, drawX, blobCenterY, Math.max(blobW, blobH));
           g.addColorStop(0, "rgba(253, 224, 71, 0.95)");
           g.addColorStop(0.35, "rgba(251, 191, 36, 0.75)");
           g.addColorStop(0.72, "rgba(239, 68, 68, 0.45)");
           g.addColorStop(1, "rgba(239, 68, 68, 0.0)");
           ctx.fillStyle = g;
           ctx.beginPath();
-          ctx.ellipse(drawX, centerY, blobW / 2, blobH / 2, 0, 0, Math.PI * 2);
+          ctx.ellipse(drawX, blobCenterY, blobW / 2, blobH / 2, 0, 0, Math.PI * 2);
           ctx.fill();
 
           // a second, slightly offset yellow smear for "flame-like" feel
-          const g2 = ctx.createRadialGradient(drawX, centerY - blobH * 0.12, 1, drawX, centerY - blobH * 0.12, Math.max(blobW, blobH) * 0.7);
+          const g2 = ctx.createRadialGradient(drawX, blobCenterY - blobH * 0.12, 1, drawX, blobCenterY - blobH * 0.12, Math.max(blobW, blobH) * 0.7);
           g2.addColorStop(0, "rgba(255, 244, 202, 0.85)");
           g2.addColorStop(0.55, "rgba(253, 224, 71, 0.40)");
           g2.addColorStop(1, "rgba(253, 224, 71, 0.0)");
           ctx.fillStyle = g2;
           ctx.beginPath();
-          ctx.ellipse(drawX + blobW * 0.06, centerY - blobH * 0.14, blobW * 0.22, blobH * 0.20, 0, 0, Math.PI * 2);
+          ctx.ellipse(drawX + blobW * 0.06, blobCenterY - blobH * 0.14, blobW * 0.22, blobH * 0.20, 0, 0, Math.PI * 2);
           ctx.fill();
 
           ctx.filter = "none";
@@ -729,26 +1047,23 @@
           return;
         }
 
-        // Align so that the flame stays centered on the white screen.
-        const H = Math.max(18, Math.abs(hPx));
-        const bodyW = clamp(H * 0.22, 16, screen.w * 0.55);
-        const bodyH = Math.max(26, H * 0.78);
-        const stemH = Math.max(6, H - bodyH);
-        const dir = inverted ? -1 : 1;
-        const topY = 0 - dir * (stemH + bodyH);
-        const yMin = Math.min(topY, 0 - dir * stemH);
-        const yMax = Math.max(topY, 0 - dir * stemH);
-        const wickBaseY = inverted ? (yMax - 2) : (yMin + 2);
-        const wickTipY = wickBaseY - dir * clamp(bodyW * 0.42, 7, 14);
-        const flameY = wickTipY - dir * (bodyW * 0.42);
-        const baseY = centerY - flameY;
+        // Project image position onto the screen segment in world coordinates.
+        // This makes it possible that only part of the candle is visible (cropped by the screen bounds).
+        const mVal = typeof image.m === "number" ? image.m : 0;
+        const invertedDraw = mVal < 0 ? true : inverted;
 
-        drawCandle(drawX, baseY, hPx, {
-          inverted,
+        const hPxPreview = clamp(hPx * worldToPreviewScale, 12, 2200);
+        const flameWorldY = candleFlamePoint(state.candleBaseY, state.candleHeight).y;
+        const flameImgWorldY = state.axisY + (flameWorldY - state.axisY) * mVal;
+        const flameTargetY = worldToPreviewY(flameImgWorldY);
+        const tipOff = flameTipOffsetFromBase(hPxPreview, invertedDraw);
+        const baseY = flameTargetY - tipOff;
+
+        drawFlame(drawX, baseY, hPxPreview, {
+          inverted: invertedDraw,
           blur: blurPx,
           alpha: alphaPx,
           t: performance.now(),
-          maxBodyW: screen.w * 0.55,
           onWhite: true
         });
       }
@@ -763,9 +1078,17 @@
       // geometry
       const xLens = state.lensX;
       const doPx = xLens - state.candleX;
-      const image = computeImage(doPx, Math.abs(effectiveF()));
-      // Recompute with signed f for correct di sign behavior.
-      const imageSigned = computeImageSigned(doPx, effectiveF());
+      let imageSigned;
+      if (state.lensType === "none") {
+        imageSigned = { type: "real", di: Number.POSITIVE_INFINITY, m: 1 };
+      } else if (state.lensType === "camera") {
+        const di = state.screenX - xLens;
+        const m = -di / Math.max(1e-6, doPx);
+        imageSigned = { type: "real", di, m };
+      } else {
+        // Recompute with signed f for correct di sign behavior.
+        imageSigned = computeImageSigned(doPx, effectiveF());
+      }
 
       // focus + preview params
       const focus = {
@@ -777,14 +1100,29 @@
       };
 
       if (imageSigned.type === "real") {
-        const xImgPlane = xLens + imageSigned.di;
-        focus.focusDeltaPx = state.screenX - xImgPlane;
-        const tol = 6; // px tolerance for "sharp"
-        focus.inFocus = Math.abs(focus.focusDeltaPx) <= tol;
-        focus.blurPx = clamp(Math.abs(focus.focusDeltaPx) * 0.10, 0, 14);
-        focus.imageHeightPx = state.candleHeight * Math.abs(imageSigned.m);
-        // Always render; the preview clamps size to fit the white screen.
-        focus.visible = true;
+        if (state.lensType === "none") {
+          focus.focusDeltaPx = 0;
+          focus.inFocus = true;
+          focus.blurPx = 0;
+          focus.imageHeightPx = state.candleHeight;
+          focus.visible = true;
+        } else if (state.lensType === "camera") {
+          // Pinhole camera has geometric imaging without defocus (in this simplified model).
+          focus.focusDeltaPx = 0;
+          focus.inFocus = true;
+          focus.blurPx = 0;
+          focus.imageHeightPx = state.candleHeight * Math.abs(imageSigned.m);
+          focus.visible = true;
+        } else {
+          const xImgPlane = xLens + imageSigned.di;
+          focus.focusDeltaPx = state.screenX - xImgPlane;
+          const tol = 6; // px tolerance for "sharp"
+          focus.inFocus = Math.abs(focus.focusDeltaPx) <= tol;
+          focus.blurPx = clamp(Math.abs(focus.focusDeltaPx) * 0.10, 0, 14);
+          focus.imageHeightPx = state.candleHeight * Math.abs(imageSigned.m);
+          // Always render; the preview clamps size to fit the white screen.
+          focus.visible = true;
+        }
       } else if (imageSigned.type === "virtual") {
         // Use distance to the (virtual) image plane as a defocus proxy for preview effects.
         const xImgPlane = xLens + imageSigned.di; // di < 0 (left of lens)
@@ -799,12 +1137,19 @@
       drawScreen();
       drawSceneCandle(now);
 
+      // rays
+      if (state.showHelperRays) {
+        drawHelperRays(imageSigned);
+      }
+
       // preview panel next to the screen (as requested)
       drawImagePreview(imageSigned, focus);
     }
 
     function setCandleX(x) {
-      const minGapToLens = 8; // allow almost touching the lens, keep do > 0
+      // Prevent the flame from visually intersecting the lens.
+      // This also avoids extreme geometry right at the lens plane.
+      const minGapToLens = 64;
       const maxX = Math.max(limits.candleMin, state.lensX - minGapToLens);
       state.candleX = clamp(x, limits.candleMin, maxX);
       draw();
@@ -812,6 +1157,20 @@
 
     function setScreenX(x) {
       state.screenX = clamp(x, Math.max(limits.screenMin, state.lensX + 24), limits.screenMax);
+      draw();
+    }
+
+    function setScreenY(y) {
+      const halfLen = 160;
+      state.screenY = clamp(y, 20 + halfLen, canvas.height - 20 - halfLen);
+      draw();
+    }
+
+    function setScreenPos(x, y) {
+      // clamp X first (needs lensX)
+      state.screenX = clamp(x, Math.max(limits.screenMin, state.lensX + 24), limits.screenMax);
+      const halfLen = 160;
+      state.screenY = clamp(y, 20 + halfLen, canvas.height - 20 - halfLen);
       draw();
     }
 
@@ -847,6 +1206,7 @@
       if (inside(s)) {
         state.dragging = "screen";
         state.dragOffsetX = p.x - state.screenX;
+        state.dragOffsetY = p.y - state.screenY;
         canvas.setPointerCapture?.(event.pointerId);
         return;
       }
@@ -858,7 +1218,7 @@
       if (state.dragging === "candle") {
         setCandleX(p.x - state.dragOffsetX);
       } else if (state.dragging === "screen") {
-        setScreenX(p.x - state.dragOffsetX);
+        setScreenPos(p.x - state.dragOffsetX, p.y - state.dragOffsetY);
       }
     });
 
@@ -868,6 +1228,13 @@
 
     if (convergingBtn) convergingBtn.addEventListener("click", () => setLensType("converging"));
     if (divergingBtn) divergingBtn.addEventListener("click", () => setLensType("diverging"));
+    if (noLensBtn) noLensBtn.addEventListener("click", () => setLensType("none"));
+    if (cameraBtn) cameraBtn.addEventListener("click", () => setLensType("camera"));
+    if (helperRaysBtn) helperRaysBtn.addEventListener("click", () => {
+      state.showHelperRays = !state.showHelperRays;
+      helperRaysBtn.setAttribute("aria-pressed", String(state.showHelperRays));
+      draw();
+    });
     window.addEventListener("resize", positionLensToggle);
 
     // subtle flame flicker animation (cheap: just redraw)
