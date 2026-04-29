@@ -217,13 +217,17 @@
       left: 14px;
       top: 14px;
       display: inline-flex;
+      flex-direction: column;
+      align-items: stretch;
       padding: 6px;
-      border-radius: 999px;
+      border-radius: 14px;
       border: 1px solid rgba(148,163,184,0.35);
       background: rgba(15,23,42,0.35);
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
       user-select: none;
+      width: 340px;
+      max-width: calc(100% - 28px);
     }
     .uiToggle button {
       appearance: none;
@@ -237,11 +241,57 @@
       cursor: pointer;
       transition: transform 120ms ease, background-color 120ms ease, opacity 120ms ease;
       white-space: nowrap;
+      width: 100%;
     }
     .uiToggle button:hover { transform: translateY(-1px); }
     .uiToggle button[aria-pressed="true"] {
       background: color-mix(in oklab, var(--accent) 24%, rgba(15,23,42,0.22) 76%);
       border-color: color-mix(in oklab, var(--accent) 35%, rgba(148,163,184,0.25) 65%);
+    }
+
+    .helperMenu {
+      display: none;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148,163,184,0.28);
+      gap: 6px;
+    }
+    .helperMenu[data-open="true"] {
+      display: grid;
+    }
+    .helperMenuGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      align-items: start;
+    }
+    .helperGroupTitle {
+      font-size: 0.82rem;
+      color: color-mix(in oklab, var(--text) 70%, var(--muted) 30%);
+      font-weight: 900;
+      letter-spacing: 0.2px;
+      margin: 0 0 6px;
+      opacity: 0.95;
+    }
+    .helperOption {
+      appearance: none;
+      width: 100%;
+      text-align: left;
+      border: 1px solid rgba(148,163,184,0.22);
+      background: rgba(15,23,42,0.22);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-weight: 850;
+      letter-spacing: 0.2px;
+      cursor: pointer;
+      transition: transform 120ms ease, background-color 120ms ease, opacity 120ms ease;
+      white-space: nowrap;
+    }
+    .helperOption:hover { transform: translateY(-1px); }
+    .helperOption[data-selected="true"] {
+      background: color-mix(in oklab, var(--accent) 18%, rgba(15,23,42,0.22) 82%);
+      border-color: color-mix(in oklab, var(--accent) 35%, rgba(148,163,184,0.22) 65%);
     }
   </style>
 </head>
@@ -262,6 +312,21 @@
         <canvas id="scene" width="1600" height="660" aria-label="Optická lavice se spojnou čočkou"></canvas>
         <div class="uiToggle" role="group" aria-label="Pomocné paprsky">
           <button id="helperRaysBtn" type="button" aria-pressed="false">Pomocné paprsky</button>
+          <div id="helperMenu" class="helperMenu" data-open="false" role="menu" aria-label="Volba počtu paprsků">
+            <div class="helperMenuGrid">
+              <div>
+                <p class="helperGroupTitle">Počet</p>
+                <button class="helperOption" type="button" role="menuitemradio" data-helper-count="2" aria-checked="false">2 paprsky</button>
+                <button class="helperOption" type="button" role="menuitemradio" data-helper-count="5" aria-checked="true" data-selected="true">5 paprsků</button>
+                <button class="helperOption" type="button" role="menuitemradio" data-helper-count="all" aria-checked="false">Všechny paprsky</button>
+              </div>
+              <div>
+                <p class="helperGroupTitle">Odkud</p>
+                <button class="helperOption" type="button" role="menuitemradio" data-helper-points="1" aria-checked="false">1 bod</button>
+                <button class="helperOption" type="button" role="menuitemradio" data-helper-points="2" aria-checked="true" data-selected="true">2 body</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div id="lensToggle" class="lensToggle" role="group" aria-label="Typ čočky">
           <button id="convergingBtn" type="button" aria-pressed="true">Spojka</button>
@@ -314,6 +379,7 @@
     const noLensBtn = document.getElementById("noLensBtn");
     const cameraBtn = document.getElementById("cameraBtn");
     const helperRaysBtn = document.getElementById("helperRaysBtn");
+    const helperMenu = document.getElementById("helperMenu");
     const taskBtn = document.getElementById("taskBtn");
     const taskDialog = document.getElementById("taskDialog");
     const taskCloseBtn = document.getElementById("taskCloseBtn");
@@ -358,6 +424,8 @@
       lensType: "converging", // "converging" | "diverging" | "none" | "camera"
       candleHeight: 118,
       showHelperRays: false,
+      helperRaysCount: 5, // 2 | 5 | "all"
+      helperRaysPoints: 2, // 1 | 2 (1 = only flame tip, 2 = tip + bottom)
       dragging: null, // "candle" | "screen" | null
       dragOffsetX: 0,
       dragOffsetY: 0,
@@ -817,17 +885,86 @@
       const lensTop = 76;
       const lensBottom = canvas.height - 70;
 
-      // Bundle of 5 rays leaving from one point (flame tip).
-      // Distribute them around the optical axis so that (at least) two pass below the lens center.
-      const offsets = [-72, -36, 0, 36, 72];
-      const yLensPoints = offsets
-        .map((d) => clamp(yAxis + d, lensTop + 12, lensBottom - 12));
+      function helperOffsets() {
+        if (state.helperRaysCount === 2) return [-54, 54];
+        if (state.helperRaysCount === "all") {
+          // This mode is handled as an angle fan (rays in many directions).
+          return [];
+        }
+        return [-72, -36, 0, 36, 72];
+      }
 
-      // Make the middle helper ray a "chief ray" through the optical center.
-      // That ray should not bend in the thin-lens approximation.
-      yLensPoints[2] = clamp(yAxis, lensTop + 12, lensBottom - 12);
+      // Bundle of rays leaving from one point (flame tip/base), intersecting the lens plane.
+      // Distribute them around the optical axis.
+      const offsets = helperOffsets();
+      const yLensPoints = offsets.map((d) => clamp(yAxis + d, lensTop + 12, lensBottom - 12));
 
       const xRight = canvas.width - 24;
+      const xLeft = 24;
+      const dxIn = xLens - xObj;
+
+      const withinAperture = (y) => y >= lensTop + 12 && y <= lensBottom - 12;
+
+      function drawStopMark(x, y) {
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = 3.2;
+        ctx.beginPath();
+        ctx.moveTo(x - 1, y - 4);
+        ctx.lineTo(x - 1, y + 4);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawAllDirectionsBundle(yOrigin, strokeStyle) {
+        // Rays from a point source in many directions (fan).
+        // We draw:
+        // - same angular density left and right
+        // - slightly sparse to keep it readable
+        const angleStepDeg = 6;
+        const angleMaxDeg = 87;
+        const rightAnglesDeg = [];
+        const leftAnglesDeg = [];
+        for (let a = -angleMaxDeg; a <= angleMaxDeg; a += angleStepDeg) {
+          rightAnglesDeg.push(a);
+          leftAnglesDeg.push(a);
+        }
+
+        ctx.strokeStyle = strokeStyle;
+
+        // Left-going rays (no lens interaction), just extend to left canvas edge.
+        for (let i = 0; i < leftAnglesDeg.length; i += 1) {
+          const theta = (leftAnglesDeg[i] * Math.PI) / 180;
+          const dxL = xLeft - xObj; // negative
+          const yL = yOrigin + Math.tan(theta) * dxL;
+          ctx.beginPath();
+          ctx.moveTo(xObj, yOrigin);
+          ctx.lineTo(xLeft, yL);
+          ctx.stroke();
+        }
+
+        // Right-going rays toward the lens plane.
+        // Also include a special "chief ray" through the lens center.
+        for (let i = 0; i < rightAnglesDeg.length; i += 1) {
+          const theta = (rightAnglesDeg[i] * Math.PI) / 180;
+          const yAtLens = yOrigin + Math.tan(theta) * dxIn;
+          ctx.beginPath();
+          ctx.moveTo(xObj, yOrigin);
+          ctx.lineTo(xLens, yAtLens);
+          ctx.stroke();
+
+          if (!withinAperture(yAtLens)) {
+            drawStopMark(xLens, yAtLens);
+          }
+        }
+
+        // Chief ray through optical center (always drawn and always passes).
+        ctx.beginPath();
+        ctx.moveTo(xObj, yOrigin);
+        ctx.lineTo(xLens, yAxis);
+        ctx.stroke();
+      }
 
       // Camera obscura: only a single ray can pass through the pinhole.
       if (state.lensType === "camera") {
@@ -838,8 +975,25 @@
         ctx.setLineDash([7, 7]);
         function drawCameraBundle(yOrigin, strokeStyle) {
           ctx.strokeStyle = strokeStyle;
+          if (state.helperRaysCount === "all") {
+            // In "all directions" mode: show many rays in all directions,
+            // but only the one through the pinhole continues.
+            drawAllDirectionsBundle(yOrigin, strokeStyle);
+
+            // Continue only the pinhole ray beyond the plate.
+            const dxOut = xRight - xLens;
+            const slopeIn = (yAxis - yOrigin) / (dxIn || 1e-6);
+            ctx.beginPath();
+            ctx.moveTo(xLens, yAxis);
+            ctx.lineTo(xRight, yAxis + slopeIn * dxOut);
+            ctx.stroke();
+            return;
+          }
+
           for (let i = 0; i < yLensPoints.length; i += 1) {
-            const yAtPlate = (i === 2) ? yAxis : yLensPoints[i];
+            // Prefer the ray closest to the axis as the only one through the pinhole.
+            const midIdx = Math.floor(yLensPoints.length / 2);
+            const yAtPlate = (i === midIdx) ? yAxis : yLensPoints[i];
 
             // Segment to the plate (always drawn)
             ctx.beginPath();
@@ -848,8 +1002,7 @@
             ctx.stroke();
 
             // Only the ray through the pinhole continues beyond the plate.
-            if (i === 2) {
-              const dxIn = xLens - xObj;
+            if (i === midIdx) {
               const slope = (yAtPlate - yOrigin) / (dxIn || 1e-6);
               const dxOut = xRight - xLens;
               ctx.beginPath();
@@ -858,22 +1011,14 @@
               ctx.stroke();
             } else {
               // Small "stop" mark on the plate to show absorption.
-              ctx.save();
-              ctx.setLineDash([]);
-              ctx.globalAlpha = 0.55;
-              ctx.lineWidth = 3.2;
-              ctx.beginPath();
-              ctx.moveTo(xLens - 1, yAtPlate - 4);
-              ctx.lineTo(xLens - 1, yAtPlate + 4);
-              ctx.stroke();
-              ctx.restore();
+              drawStopMark(xLens, yAtPlate);
             }
           }
         }
 
-        // From flame tip and from flame base: 5 rays each, only the middle passes the hole.
+        // From flame tip (and optionally from flame base): rays each, only the middle passes the hole.
         drawCameraBundle(yObjTop, "rgba(56, 189, 248, 0.95)");
-        drawCameraBundle(yObjBottom, "rgba(34, 197, 94, 0.80)");
+        if (state.helperRaysPoints === 2) drawCameraBundle(yObjBottom, "rgba(34, 197, 94, 0.80)");
 
         ctx.setLineDash([]);
         ctx.restore();
@@ -890,12 +1035,42 @@
 
         function drawBundleStraight(yOrigin, strokeStyle) {
           ctx.strokeStyle = strokeStyle;
+          if (state.helperRaysCount === "all") {
+            // All directions: rays are straight everywhere.
+            drawAllDirectionsBundle(yOrigin, strokeStyle);
+
+            // Continue the fan to the right edge (no refraction, no stop).
+            const angleStepDeg = 6;
+            const angleMaxDeg = 87;
+            const rightAnglesDeg = [];
+            for (let a = -angleMaxDeg; a <= angleMaxDeg; a += angleStepDeg) rightAnglesDeg.push(a);
+            for (let i = 0; i < rightAnglesDeg.length; i += 1) {
+              const theta = (rightAnglesDeg[i] * Math.PI) / 180;
+              const yAtLens = yOrigin + Math.tan(theta) * dxIn;
+              const dxOut = xRight - xLens;
+              const yRight = yAtLens + Math.tan(theta) * dxOut;
+              ctx.beginPath();
+              ctx.moveTo(xLens, yAtLens);
+              ctx.lineTo(xRight, yRight);
+              ctx.stroke();
+            }
+
+            // Chief ray continuation
+            const dxOut = xRight - xLens;
+            const slopeIn = (yAxis - yOrigin) / (dxIn || 1e-6);
+            ctx.beginPath();
+            ctx.moveTo(xLens, yAxis);
+            ctx.lineTo(xRight, yAxis + slopeIn * dxOut);
+            ctx.stroke();
+            return;
+          }
+
           for (let i = 0; i < yLensPoints.length; i += 1) {
-            const yAtRef = (i === 2) ? yAxis : yLensPoints[i];
+            const midIdx = Math.floor(yLensPoints.length / 2);
+            const yAtRef = (i === midIdx) ? yAxis : yLensPoints[i];
             ctx.beginPath();
             ctx.moveTo(xObj, yOrigin);
             ctx.lineTo(xLens, yAtRef);
-            const dxIn = xLens - xObj;
             const slope = (yAtRef - yOrigin) / (dxIn || 1e-6);
             const dxOut = xRight - xLens;
             ctx.lineTo(xRight, yAtRef + slope * dxOut);
@@ -904,7 +1079,7 @@
         }
 
         drawBundleStraight(yObjTop, "rgba(56, 189, 248, 0.92)");
-        drawBundleStraight(yObjBottom, "rgba(34, 197, 94, 0.75)");
+        if (state.helperRaysPoints === 2) drawBundleStraight(yObjBottom, "rgba(34, 197, 94, 0.75)");
 
         ctx.setLineDash([]);
         ctx.restore();
@@ -947,14 +1122,70 @@
         const yImg = yAxis + (yOrigin - yAxis) * m;
         ctx.strokeStyle = strokeStyle;
 
-        for (let i = 0; i < yLensPoints.length; i += 1) {
-          const yLens = yLensPoints[i];
-
-          // Middle helper ray: single continuous chief ray through lens center.
-          if (i === 2) {
+        if (state.helperRaysCount === "all") {
+          // Draw many incoming directions. Only rays that hit the lens aperture get refracted.
+          const angleStepDeg = 6;
+          const angleMaxDeg = 87;
+          const rightAnglesDeg = [];
+          const leftAnglesDeg = [];
+          for (let a = -angleMaxDeg; a <= angleMaxDeg; a += angleStepDeg) {
+            rightAnglesDeg.push(a);
+            leftAnglesDeg.push(a);
+          }
+          for (let i = 0; i < leftAnglesDeg.length; i += 1) {
+            const theta = (leftAnglesDeg[i] * Math.PI) / 180;
+            const dxL = xLeft - xObj;
+            const yL = yOrigin + Math.tan(theta) * dxL;
             ctx.beginPath();
             ctx.moveTo(xObj, yOrigin);
-            const dxIn = xLens - xObj;
+            ctx.lineTo(xLeft, yL);
+            ctx.stroke();
+          }
+
+          // Right-going rays to lens plane.
+          for (let i = 0; i < rightAnglesDeg.length; i += 1) {
+            const theta = (rightAnglesDeg[i] * Math.PI) / 180;
+            const yAtLens = yOrigin + Math.tan(theta) * dxIn;
+
+            // Incoming to lens
+            ctx.beginPath();
+            ctx.moveTo(xObj, yOrigin);
+            ctx.lineTo(xLens, yAtLens);
+            ctx.stroke();
+
+            if (!withinAperture(yAtLens)) {
+              drawStopMark(xLens, yAtLens);
+              continue;
+            }
+
+            // Outgoing after lens: pass through (or diverge from) image point.
+            ctx.beginPath();
+            ctx.moveTo(xLens, yAtLens);
+            const dx = xRight - xLens;
+            const slope = (yImg - yAtLens) / di;
+            ctx.lineTo(xRight, yAtLens + slope * dx);
+            ctx.stroke();
+          }
+
+          // Chief ray through optical center (not bent).
+          ctx.beginPath();
+          ctx.moveTo(xObj, yOrigin);
+          const slopeIn = (yAxis - yOrigin) / (dxIn || 1e-6);
+          ctx.lineTo(xLens, yAxis);
+          const dxOut = xRight - xLens;
+          ctx.lineTo(xRight, yAxis + slopeIn * dxOut);
+          ctx.stroke();
+          return;
+        }
+
+        for (let i = 0; i < yLensPoints.length; i += 1) {
+          const yLens = yLensPoints[i];
+          const midIdx = Math.floor(yLensPoints.length / 2);
+
+          // Middle helper ray: single continuous chief ray through lens center.
+          if (i === midIdx) {
+            ctx.beginPath();
+            ctx.moveTo(xObj, yOrigin);
             const slopeIn = (yAxis - yOrigin) / (dxIn || 1e-6);
             ctx.lineTo(xLens, yAxis);
             const dxOut = xRight - xLens;
@@ -982,7 +1213,7 @@
       // From flame tip (existing)
       drawBundle(yObjTop, "rgba(56, 189, 248, 0.92)");
       // From bottom of the candle (new helper rays)
-      drawBundle(yObjBottom, "rgba(34, 197, 94, 0.75)");
+      if (state.helperRaysPoints === 2) drawBundle(yObjBottom, "rgba(34, 197, 94, 0.75)");
 
       ctx.setLineDash([]);
       ctx.restore();
@@ -1362,8 +1593,38 @@
     if (helperRaysBtn) helperRaysBtn.addEventListener("click", () => {
       state.showHelperRays = !state.showHelperRays;
       helperRaysBtn.setAttribute("aria-pressed", String(state.showHelperRays));
+      if (helperMenu) helperMenu.setAttribute("data-open", String(state.showHelperRays));
       draw();
     });
+    if (helperMenu) {
+      helperMenu.addEventListener("click", (e) => {
+        const t = e.target;
+        if (!(t instanceof HTMLElement)) return;
+        const btn = t.closest?.("button[data-helper-count],button[data-helper-points]");
+        if (!(btn instanceof HTMLButtonElement)) return;
+        const vCount = btn.getAttribute("data-helper-count");
+        const vPts = btn.getAttribute("data-helper-points");
+        if (vCount) state.helperRaysCount = (vCount === "2") ? 2 : (vCount === "all" ? "all" : 5);
+        if (vPts) state.helperRaysPoints = (vPts === "1") ? 1 : 2;
+
+        const countOptions = helperMenu.querySelectorAll("button[data-helper-count]");
+        countOptions.forEach((opt) => {
+          const optVal = opt.getAttribute("data-helper-count");
+          const selected = optVal === "all"
+            ? state.helperRaysCount === "all"
+            : (Number(optVal) === state.helperRaysCount);
+          opt.setAttribute("aria-checked", String(selected));
+          opt.setAttribute("data-selected", String(selected));
+        });
+        const ptsOptions = helperMenu.querySelectorAll("button[data-helper-points]");
+        ptsOptions.forEach((opt) => {
+          const selected = Number(opt.getAttribute("data-helper-points")) === state.helperRaysPoints;
+          opt.setAttribute("aria-checked", String(selected));
+          opt.setAttribute("data-selected", String(selected));
+        });
+        draw();
+      });
+    }
     if (taskBtn) taskBtn.addEventListener("click", openTask);
     if (taskCloseBtn) taskCloseBtn.addEventListener("click", closeTask);
     if (taskDialog instanceof HTMLDialogElement) {
