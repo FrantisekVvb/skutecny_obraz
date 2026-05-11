@@ -6,58 +6,30 @@
   <title>Hledání skutečného obrazu</title>
   <style>
     :root {
-      color-scheme: light dark;
-      --bg: #f6f8fb;
-      --panel: #ffffff;
-      --text: #0f172a;
-      --muted: #475569;
-      --accent: #0ea5e9;
-      --ok: #16a34a;
-      --warn: #d97706;
-      --bad: #dc2626;
+      color-scheme: dark;
+      --bg: #0b1220;
+      --panel: #0f172a;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --bad: #fb7185;
 
-      --canvas-bg: #eef2ff;
-      --canvas-border: #c7d2fe;
+      --canvas-bg: #0b1020;
+      --canvas-border: #1f2a44;
 
-      --axis: #334155;
-      --tick: #64748b;
-      --ray: #0ea5e9;
-      --ray2: #a78bfa;
-      --lens: #2563eb;
-      --screen: #0f172a;
+      --axis: #94a3b8;
+      --tick: #94a3b8;
+      --ray: #38bdf8;
+      --ray2: #c4b5fd;
+      --lens: #60a5fa;
+      --screen: #e5e7eb;
 
-      --candle-body: #ef4444;
-      --candle-wax: #fb7185;
-      --flame: #f59e0b;
-      --flame2: #fde047;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0b1220;
-        --panel: #0f172a;
-        --text: #e5e7eb;
-        --muted: #94a3b8;
-        --accent: #38bdf8;
-        --ok: #22c55e;
-        --warn: #f59e0b;
-        --bad: #fb7185;
-
-        --canvas-bg: #0b1020;
-        --canvas-border: #1f2a44;
-
-        --axis: #94a3b8;
-        --tick: #94a3b8;
-        --ray: #38bdf8;
-        --ray2: #c4b5fd;
-        --lens: #60a5fa;
-        --screen: #e5e7eb;
-
-        --candle-body: #fb7185;
-        --candle-wax: #fecdd3;
-        --flame: #fbbf24;
-        --flame2: #fde68a;
-      }
+      --candle-body: #fb7185;
+      --candle-wax: #fecdd3;
+      --flame: #fbbf24;
+      --flame2: #fde68a;
     }
 
     * { box-sizing: border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
@@ -373,6 +345,27 @@
   <script>
     const canvas = document.getElementById("scene");
     const ctx = canvas.getContext("2d");
+
+    /** Spojka: přesně podle dodaného SVG (viewBox 0 0 45 174). */
+    const CONVERGING_LENS_SVG_W = 45;
+    const CONVERGING_LENS_SVG_H = 174;
+    const convergingLensSvgBody = new Path2D(
+      "M23.1597 174H22.7886C22.7886 174 0 138.621 0 86.721C0 34.821 22.7886 0 22.7886 0H23.1597C23.1597 0 45 35.562 45 86.8994C45 138.237 23.1597 174 23.1597 174Z"
+    );
+    const convergingLensSvgMarks = new Path2D(
+      "M22.0991 163L25.5055 157.1H18.6927L22.0991 163ZM22.0991 10.5L18.6927 16.4H25.5055L22.0991 10.5ZM22.0991 157.69H22.6891L22.6891 15.81H22.0991H21.5091L21.5091 157.69H22.0991Z"
+    );
+
+    /** Rozptylka: přesně podle dodaného SVG (viewBox 0 0 52 174). */
+    const DIVERGING_LENS_SVG_W = 52;
+    const DIVERGING_LENS_SVG_H = 174;
+    const divergingLensSvgBody = new Path2D(
+      "M8.74707e-07 174H51.9954C51.9954 174 35.1389 138.621 35.1389 86.721C35.1389 34.821 52 0 52 0H0.00456113C0.00456113 0 17.7358 35.562 17.7358 86.8994C17.7358 138.237 0.00456113 174 0.00456113 174H8.74707e-07Z"
+    );
+    const divergingLensSvgMarks = new Path2D(
+      "M26.41 163.1L23.5936 169L30.4064 169L27.59 163.1L26.41 163.1ZM27.59 10.9L30.4064 5L23.5936 5L26.41 10.9L27.59 10.9ZM27 163.69L27.59 163.69L27.59 10.31L27 10.31L26.41 10.31L26.41 163.69L27 163.69Z"
+    );
+
     const lensToggleEl = document.getElementById("lensToggle");
     const convergingBtn = document.getElementById("convergingBtn");
     const divergingBtn = document.getElementById("divergingBtn");
@@ -420,7 +413,7 @@
       candleX: 140,
       screenX: 900,
       screenY: 330,
-      fPx: 110,
+      fPx: 165,
       lensType: "converging", // "converging" | "diverging" | "none" | "camera"
       candleHeight: 118,
       showHelperRays: false,
@@ -589,68 +582,30 @@
       const x = state.lensX;
       const top = 76;
       const bottom = canvas.height - 70;
-      const w = 34;
-      const mid = (top + bottom) / 2;
-
-      const grad = ctx.createLinearGradient(x - w, 0, x + w, 0);
-      grad.addColorStop(0, "rgba(37, 99, 235, 0.10)");
-      grad.addColorStop(0.5, "rgba(37, 99, 235, 0.32)");
-      grad.addColorStop(1, "rgba(37, 99, 235, 0.10)");
 
       ctx.save();
-      ctx.fillStyle = grad;
-      ctx.strokeStyle = cssVar("--lens", "#2563eb");
-      ctx.lineWidth = 2;
-      ctx.beginPath();
       if (state.lensType === "diverging") {
-        // "vykrojená" (rozptylka) – hourglass shape like in reference
-        const wTop = w * 1.05;
-        const wMid = w * 0.32;
-
-        // left side from top -> mid -> bottom (concave inward at mid)
-        ctx.moveTo(x - wTop, top);
-        ctx.bezierCurveTo(
-          x - wTop * 0.92, top + (mid - top) * 0.25,
-          x - wMid * 1.05, mid - (mid - top) * 0.18,
-          x - wMid, mid
-        );
-        ctx.bezierCurveTo(
-          x - wMid * 1.05, mid + (bottom - mid) * 0.18,
-          x - wTop * 0.92, bottom - (bottom - mid) * 0.25,
-          x - wTop, bottom
-        );
-
-        // bottom edge to right side
-        ctx.lineTo(x + wTop, bottom);
-
-        // right side bottom -> mid -> top (mirror)
-        ctx.bezierCurveTo(
-          x + wTop * 0.92, bottom - (bottom - mid) * 0.25,
-          x + wMid * 1.05, mid + (bottom - mid) * 0.18,
-          x + wMid, mid
-        );
-        ctx.bezierCurveTo(
-          x + wMid * 1.05, mid - (mid - top) * 0.18,
-          x + wTop * 0.92, top + (mid - top) * 0.25,
-          x + wTop, top
-        );
-        ctx.closePath();
+        const cy = (top + bottom) / 2;
+        const scale = (bottom - top) / DIVERGING_LENS_SVG_H;
+        ctx.translate(x, cy);
+        ctx.scale(scale, scale);
+        ctx.translate(-DIVERGING_LENS_SVG_W / 2, -DIVERGING_LENS_SVG_H / 2);
+        ctx.fillStyle = "#D4EAFF";
+        ctx.fill(divergingLensSvgBody);
+        ctx.fillStyle = "#000000";
+        ctx.fill(divergingLensSvgMarks);
       } else {
-        // biconvex-ish shape
-        ctx.moveTo(x, top);
-        ctx.bezierCurveTo(x - w, top + 26, x - w, bottom - 26, x, bottom);
-        ctx.bezierCurveTo(x + w, bottom - 26, x + w, top + 26, x, top);
-        ctx.closePath();
+        const cy = (top + bottom) / 2;
+        const scale = (bottom - top) / CONVERGING_LENS_SVG_H;
+        ctx.translate(x, cy);
+        ctx.scale(scale, scale);
+        ctx.translate(-CONVERGING_LENS_SVG_W / 2, -CONVERGING_LENS_SVG_H / 2);
+        ctx.fillStyle = "#D4EAFF";
+        ctx.fill(convergingLensSvgBody);
+        ctx.fillStyle = "#000000";
+        ctx.fill(convergingLensSvgMarks);
       }
-      ctx.fill();
-      ctx.stroke();
       ctx.restore();
-
-      // center point
-      ctx.fillStyle = cssVar("--lens", "#2563eb");
-      ctx.beginPath();
-      ctx.arc(x, state.axisY, 3.5, 0, Math.PI * 2);
-      ctx.fill();
     }
 
     function candleHitRect() {
@@ -677,7 +632,6 @@
       const onWhite = opts.onWhite === true;
 
       const dir = inverted ? -1 : 1;
-      // Allow much larger flames in the preview (high magnification near focus).
       const H = clamp(Math.abs(height), 18, onWhite ? 1600 : 320);
 
       ctx.save();
@@ -693,90 +647,166 @@
         }
       }
 
-      // Small wick (optional visual anchor)
-      const wickH = clamp(H * 0.12, 7, onWhite ? 60 : 18);
+      const flick = Math.sin((now / 92) + x * 0.018) * 0.55 + Math.sin((now / 155) + 1.4) * 0.35;
+      const tipY = baseY - dir * H;
+      const fx = x + (inverted ? -1 : 1) * flick * 0.45;
+
+      const wBase = clamp(H * 0.145 + flick * 0.1, 7, onWhite ? 480 : 42);
+      const wMid = wBase * 0.52;
+      const wTip = Math.max(1, wBase * 0.045);
+
+      const wickH = clamp(H * 0.11, 6, onWhite ? 55 : 16);
       const wickBaseY = baseY;
       const wickTipY = wickBaseY - dir * wickH;
-      ctx.strokeStyle = onWhite ? "rgba(15,23,42,0.75)" : "rgba(226,232,240,0.55)";
-      ctx.lineWidth = 3;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(x, wickBaseY);
-      ctx.lineTo(x + (inverted ? -1 : 1) * 1.5, wickTipY);
-      ctx.stroke();
 
-      // Flame body: enforce that the visible tip is exactly at baseY - dir * H.
-      const flick = Math.sin((now / 85) + x * 0.02) * 0.9 + Math.sin((now / 140) + 1.7) * 0.6;
-      const tipY = baseY - dir * H;
-      const fx = x + (inverted ? -1 : 1) * flick * 0.55;
+      const yBase = wickTipY + dir * clamp(H * 0.025, 0, 5);
+      const yMid = baseY - dir * (H * 0.50 + flick * 0.18);
 
-      const wBase = clamp(H * 0.22 + flick * 0.18, 10, onWhite ? 520 : 52);
-      const wMid = wBase * 0.56;
-      const wTip = Math.max(1.5, wBase * 0.08);
+      function flamePath(targetCtx) {
+        targetCtx.beginPath();
+        targetCtx.moveTo(fx, tipY);
+        targetCtx.bezierCurveTo(
+          fx - wTip, tipY + dir * (H * 0.11),
+          fx - wMid * 0.92, yMid - dir * (H * 0.07),
+          fx - wBase, yBase + dir * (H * 0.018)
+        );
+        targetCtx.bezierCurveTo(
+          fx - wBase * 0.56, yBase + dir * (H * 0.048),
+          fx - wBase * 0.14, yBase + dir * (H * 0.058),
+          fx, yBase + dir * (H * 0.058)
+        );
+        targetCtx.bezierCurveTo(
+          fx + wBase * 0.14, yBase + dir * (H * 0.058),
+          fx + wBase * 0.56, yBase + dir * (H * 0.048),
+          fx + wBase, yBase + dir * (H * 0.018)
+        );
+        targetCtx.bezierCurveTo(
+          fx + wMid * 0.92, yMid - dir * (H * 0.07),
+          fx + wTip, tipY + dir * (H * 0.11),
+          fx, tipY
+        );
+        targetCtx.closePath();
+      }
 
-      // Put the geometric base of the flame close to the wick tip.
-      const yBase = wickTipY + dir * clamp(H * 0.02, 0, 4);
-      const yMid = baseY - dir * (H * 0.55 + flick * 0.25);
-      const yTip = tipY; // keep exact
+      const coreY = baseY - dir * H * 0.36;
 
-      const outerGrad = ctx.createLinearGradient(0, Math.min(yTip, yBase), 0, Math.max(yTip, yBase));
-      outerGrad.addColorStop(0, "rgba(255, 250, 230, 0.98)");
-      outerGrad.addColorStop(0.35, cssVar("--flame2", "#fde047"));
-      outerGrad.addColorStop(0.72, cssVar("--flame", "#f59e0b"));
-      outerGrad.addColorStop(1, "rgba(245, 158, 11, 0.0)");
-      ctx.fillStyle = outerGrad;
+      const wickW = clamp(H * 0.032, 2.2, 5);
+      const wickTop = Math.min(wickBaseY, wickTipY);
+      const wickBot = Math.max(wickBaseY, wickTipY);
 
-      if (onWhite) {
+      if (!onWhite) {
         ctx.save();
-        ctx.shadowColor = "rgba(15, 23, 42, 0.14)";
-        ctx.shadowBlur = 10;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 2 * (inverted ? -1 : 1);
+        const haloBlur = clamp(H * 0.11, 5, 18);
+        if ("filter" in ctx) ctx.filter = `blur(${haloBlur}px)`;
+        ctx.translate(fx, coreY);
+        ctx.scale(H * 0.34, H * 0.62);
+        const hg = ctx.createRadialGradient(0, 0.08, 0, 0, 0.08, 1);
+        hg.addColorStop(0, "rgba(255, 175, 85, 0.55)");
+        hg.addColorStop(0.38, "rgba(245, 95, 35, 0.35)");
+        hg.addColorStop(0.72, "rgba(190, 45, 25, 0.14)");
+        hg.addColorStop(1, "rgba(120, 25, 15, 0)");
+        ctx.fillStyle = hg;
         ctx.beginPath();
-        ctx.moveTo(fx, yTip);
-        ctx.bezierCurveTo(fx - wTip, yTip + dir * (H * 0.10), fx - wMid, yMid - dir * (H * 0.12), fx - wBase, yBase);
-        ctx.bezierCurveTo(fx - wBase * 0.62, yBase + dir * (H * 0.06), fx - wBase * 0.18, yBase + dir * (H * 0.08), fx, yBase + dir * (H * 0.08));
-        ctx.bezierCurveTo(fx + wBase * 0.18, yBase + dir * (H * 0.08), fx + wBase * 0.62, yBase + dir * (H * 0.06), fx + wBase, yBase);
-        ctx.bezierCurveTo(fx + wMid, yMid - dir * (H * 0.12), fx + wTip, yTip + dir * (H * 0.10), fx, yTip);
-        ctx.closePath();
+        ctx.arc(0, 0.08, 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.filter = "none";
+        ctx.restore();
+      }
+
+      ctx.beginPath();
+      roundRectPath(ctx, x - wickW / 2, wickTop - 1, wickW, wickBot - wickTop + 3, wickW * 0.35);
+      ctx.fillStyle = onWhite ? "#2a1f18" : "#14100c";
+      ctx.fill();
+
+      if (!onWhite) {
+        ctx.save();
+        flamePath(ctx);
+        ctx.clip();
+        ctx.translate(fx, coreY);
+        ctx.scale(H * 0.195, H * 0.505);
+        const rg = ctx.createRadialGradient(0, -0.06, 0, 0, -0.02, 1);
+        rg.addColorStop(0, "rgba(255, 255, 255, 1)");
+        rg.addColorStop(0.12, "rgba(255, 254, 248, 1)");
+        rg.addColorStop(0.28, "rgba(255, 245, 210, 1)");
+        rg.addColorStop(0.46, "rgba(255, 218, 95, 1)");
+        rg.addColorStop(0.64, "rgba(255, 145, 48, 0.94)");
+        rg.addColorStop(0.82, "rgba(235, 82, 28, 0.72)");
+        rg.addColorStop(1, "rgba(210, 38, 18, 0)");
+        ctx.fillStyle = rg;
+        ctx.beginPath();
+        ctx.arc(0, -0.02, 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        const blueGrad = ctx.createRadialGradient(
+          x,
+          wickTipY - dir * (H * 0.04),
+          0,
+          x,
+          wickTipY - dir * (H * 0.04),
+          wBase * 1.15
+        );
+        blueGrad.addColorStop(0, "rgba(130, 175, 255, 0.85)");
+        blueGrad.addColorStop(0.42, "rgba(75, 110, 235, 0.45)");
+        blueGrad.addColorStop(1, "rgba(45, 65, 190, 0)");
+        ctx.fillStyle = blueGrad;
+        ctx.beginPath();
+        ctx.ellipse(x, wickTipY - dir * (H * 0.035), wBase * 0.42, H * 0.085, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        const emberR = clamp(H * 0.06, 4, 12);
+        const eg = ctx.createRadialGradient(x, wickTipY, 0, x, wickTipY, emberR * 1.8);
+        eg.addColorStop(0, "rgba(255, 215, 150, 0.95)");
+        eg.addColorStop(0.4, "rgba(255, 125, 40, 0.55)");
+        eg.addColorStop(1, "rgba(255, 85, 18, 0)");
+        ctx.fillStyle = eg;
+        ctx.beginPath();
+        ctx.arc(x, wickTipY, emberR, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       } else {
-        ctx.beginPath();
-        ctx.moveTo(fx, yTip);
-        ctx.bezierCurveTo(fx - wTip, yTip + dir * (H * 0.10), fx - wMid, yMid - dir * (H * 0.12), fx - wBase, yBase);
-        ctx.bezierCurveTo(fx - wBase * 0.62, yBase + dir * (H * 0.06), fx - wBase * 0.18, yBase + dir * (H * 0.08), fx, yBase + dir * (H * 0.08));
-        ctx.bezierCurveTo(fx + wBase * 0.18, yBase + dir * (H * 0.08), fx + wBase * 0.62, yBase + dir * (H * 0.06), fx + wBase, yBase);
-        ctx.bezierCurveTo(fx + wMid, yMid - dir * (H * 0.12), fx + wTip, yTip + dir * (H * 0.10), fx, yTip);
-        ctx.closePath();
+        ctx.save();
+        ctx.shadowColor = "rgba(15, 23, 42, 0.18)";
+        ctx.shadowBlur = clamp(H * 0.05, 8, 28);
+        ctx.shadowOffsetY = 2 * dir;
+        flamePath(ctx);
+        const paperGrad = ctx.createLinearGradient(fx, Math.min(tipY, yBase), fx, Math.max(tipY, yBase));
+        paperGrad.addColorStop(0, "rgba(255, 255, 252, 0.98)");
+        paperGrad.addColorStop(0.28, "rgba(255, 241, 185, 1)");
+        paperGrad.addColorStop(0.58, "rgba(255, 170, 55, 0.98)");
+        paperGrad.addColorStop(0.88, "rgba(248, 112, 35, 0.92)");
+        paperGrad.addColorStop(1, "rgba(235, 85, 28, 0.65)");
+        ctx.fillStyle = paperGrad;
         ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalAlpha = 0.88;
+        ctx.translate(fx, coreY);
+        ctx.scale(H * 0.16, H * 0.42);
+        const cg = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+        cg.addColorStop(0, "rgba(255, 255, 255, 0.95)");
+        cg.addColorStop(0.35, "rgba(255, 236, 160, 0.55)");
+        cg.addColorStop(1, "rgba(255, 200, 60, 0)");
+        ctx.fillStyle = cg;
+        ctx.beginPath();
+        ctx.arc(0, 0, 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = "rgba(59, 130, 246, 0.38)";
+        ctx.beginPath();
+        ctx.ellipse(x, wickTipY - dir * 3, wBase * 0.28, H * 0.065, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
-
-      // Inner core (hot white/yellow)
-      const coreW = wBase * 0.42;
-      const coreH = H * 0.42;
-      const coreY = yMid - dir * (H * 0.06);
-      const coreGrad = ctx.createRadialGradient(fx, coreY, 1, fx, coreY, Math.max(coreH, coreW));
-      coreGrad.addColorStop(0, "rgba(255, 255, 255, 0.90)");
-      coreGrad.addColorStop(0.42, "rgba(255, 244, 202, 0.70)");
-      coreGrad.addColorStop(0.95, "rgba(253, 224, 71, 0.10)");
-      coreGrad.addColorStop(1, "rgba(253, 224, 71, 0.0)");
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.95;
-      ctx.fillStyle = coreGrad;
-      ctx.beginPath();
-      ctx.ellipse(fx, coreY, coreW, coreH, (inverted ? -1 : 1) * 0.06, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      // Tiny blue base near wick
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.38;
-      ctx.fillStyle = "rgba(59, 130, 246, 0.26)";
-      ctx.beginPath();
-      ctx.ellipse(x, wickTipY - dir * 3, wBase * 0.22, H * 0.08, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
 
       ctx.restore();
     }
@@ -1535,7 +1565,7 @@
     }
 
     function setF(px) {
-      state.fPx = clamp(px, 50, 220);
+      state.fPx = clamp(px, 75, 330);
       draw();
     }
 
